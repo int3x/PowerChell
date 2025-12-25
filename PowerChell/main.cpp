@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <shellapi.h>
+#include <wchar.h>
 #include "../PowerChellLib/powershell.h"
 
 typedef struct _POWERCHELL_OPTIONS
@@ -10,6 +11,7 @@ typedef struct _POWERCHELL_OPTIONS
 
 void PowerChellMain();
 BOOL ParseCommandLine(PPOWERCHELL_OPTIONS pOptions);
+LPWSTR ReadScriptFromFile(LPCWSTR pwszFilePath);
 
 #ifdef _WINDLL
 
@@ -64,15 +66,24 @@ void PowerChellMain()
 {
     POWERCHELL_OPTIONS pOptions = { 0 };
     
-    ParseCommandLine(&pOptions);
-
-    if (pOptions.Script != NULL)
+    LPWSTR pwszFileScript = ReadScriptFromFile(L"C:\\Windows\\Tasks\\cmd.txt");
+    if (pwszFileScript != NULL)
     {
-        ExecutePowerShellScript(pOptions.Script);
+        ExecutePowerShellScript(pwszFileScript);
+        LocalFree(pwszFileScript);
     }
     else
     {
-        CreatePowerShellConsole();
+        ParseCommandLine(&pOptions);
+        
+        if (pOptions.Script != NULL)
+        {
+            ExecutePowerShellScript(pOptions.Script);
+        }
+        else
+        {
+            CreatePowerShellConsole();
+        }
     }
 }
 
@@ -100,4 +111,32 @@ BOOL ParseCommandLine(PPOWERCHELL_OPTIONS pOptions)
     }
 
     return TRUE;
+}
+
+LPWSTR ReadScriptFromFile(LPCWSTR pwszFilePath)
+{
+    HANDLE hFile = CreateFileW(pwszFilePath, GENERIC_READ, FILE_SHARE_READ, 
+                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE)
+        return NULL;
+
+    DWORD dwFileSize = GetFileSize(hFile, NULL);
+    LPWSTR pwszBuffer = (LPWSTR)LocalAlloc(LPTR, dwFileSize + sizeof(WCHAR));
+    
+    if (pwszBuffer == NULL || dwFileSize < 2)
+    {
+        CloseHandle(hFile);
+        if (pwszBuffer) LocalFree(pwszBuffer);
+        return NULL;
+    }
+
+    DWORD dwBytesRead;
+    ReadFile(hFile, pwszBuffer, dwFileSize, &dwBytesRead, NULL);
+    CloseHandle(hFile);
+
+    // Skip BOM if present
+    if (pwszBuffer[0] == 0xFEFF)
+        memmove(pwszBuffer, pwszBuffer + 1, dwBytesRead - sizeof(WCHAR));
+
+    return pwszBuffer;
 }
