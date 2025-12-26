@@ -121,22 +121,30 @@ LPWSTR ReadScriptFromFile(LPCWSTR pwszFilePath)
         return NULL;
 
     DWORD dwFileSize = GetFileSize(hFile, NULL);
-    LPWSTR pwszBuffer = (LPWSTR)LocalAlloc(LPTR, dwFileSize + sizeof(WCHAR));
-    
-    if (pwszBuffer == NULL || dwFileSize < 2)
-    {
-        CloseHandle(hFile);
-        if (pwszBuffer) LocalFree(pwszBuffer);
-        return NULL;
-    }
+    LPBYTE pBuffer = (LPBYTE)LocalAlloc(LPTR, dwFileSize + 2);
 
     DWORD dwBytesRead;
-    ReadFile(hFile, pwszBuffer, dwFileSize, &dwBytesRead, NULL);
+    ReadFile(hFile, pBuffer, dwFileSize, &dwBytesRead, NULL);
     CloseHandle(hFile);
 
-    // Skip BOM if present
-    if (pwszBuffer[0] == 0xFEFF)
-        memmove(pwszBuffer, pwszBuffer + 1, dwBytesRead - sizeof(WCHAR));
+    LPWSTR pwszResult = NULL;
 
-    return pwszBuffer;
+    // Check for UTF-16 LE BOM
+    if (dwBytesRead >= 2 && pBuffer[0] == 0xFF && pBuffer[1] == 0xFE)
+    {
+        // UTF-16 LE with BOM
+        DWORD dwCharCount = (dwBytesRead - 2) / sizeof(WCHAR);
+        pwszResult = (LPWSTR)LocalAlloc(LPTR, (dwCharCount + 1) * sizeof(WCHAR));
+        memcpy(pwszResult, pBuffer + 2, dwCharCount * sizeof(WCHAR));
+    }
+    else
+    {
+        // Assume ANSI/ASCII - convert to wide char
+        int iWideCharCount = MultiByteToWideChar(CP_ACP, 0, (LPCCH)pBuffer, dwBytesRead, NULL, 0);
+        pwszResult = (LPWSTR)LocalAlloc(LPTR, (iWideCharCount + 1) * sizeof(WCHAR));
+        MultiByteToWideChar(CP_ACP, 0, (LPCCH)pBuffer, dwBytesRead, pwszResult, iWideCharCount);
+    }
+
+    LocalFree(pBuffer);
+    return pwszResult;
 }
